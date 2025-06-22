@@ -59,6 +59,18 @@ Social Poster is a Go application designed to monitor a private GitHub repositor
 
 (Details about local Go development can be added here if needed, e.g., `go run main.go process`)
 
+## CI/CD
+
+This project uses GitHub Actions for continuous integration and deployment.
+
+-   **Build Go Binaries**: Automatically compiles the Go application for Linux (ARM64) and macOS (ARM64) on every push to `main`, tag push (`v*.*.*`), or pull request to `main`. The compiled binaries are available as downloadable artifacts from the workflow run.
+    [![Build Go Binaries](https://github.com/MY_USERNAME/social_poster/actions/workflows/build-binaries.yml/badge.svg)](https://github.com/MY_USERNAME/social_poster/actions/workflows/build-binaries.yml)
+
+-   **Build and Push Docker Image**: Automatically builds a Docker image and pushes it to the GitHub Container Registry (GHCR) on every push to `main` or tag push (`v*.*.*`). Images are tagged with the Git SHA, branch name, version tag, and `latest` (for pushes to `main`).
+    [![Build and Push Docker Image](https://github.com/MY_USERNAME/social_poster/actions/workflows/build-docker.yml/badge.svg)](https://github.com/MY_USERNAME/social_poster/actions/workflows/build-docker.yml)
+
+    The Docker image can be found at `ghcr.io/MY_USERNAME/social_poster`. (Replace `MY_USERNAME` with your actual GitHub username/organization).
+
 ## Project Structure
 
 -   `main.go`: Entry point of the application.

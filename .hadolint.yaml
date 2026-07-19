@@ -1,0 +1,4 @@
+# Build uses ARG base images for reachable mirrors; apk versions vary by Alpine.
+ignored:
+  - DL3006
+  - DL3018

@@ -2,45 +2,59 @@
 
 ## Overview
 
-This document provides guidance for AI agents working on the Social Poster project.
+Guidance for AI agents working on the Social Poster project — a Go CLI that publishes content to social platforms from either a Telegram bot inbox (`SOURCE=telegram`, GitHub Actions) or newly added Markdown files in a private Git repo (`SOURCE=github`).
 
 ## Development Principles
 
-1.  **Modularity**: Keep functionalities well-separated, especially for different social media platforms and core logic (config, GitHub interaction, posting).
-2.  **Security**:
-    *   Credentials must always be loaded from environment variables (via `.env` file or system environment). Do not hardcode secrets.
-    *   When logging, be careful not to expose full tokens or sensitive information. Use truncation or masking if necessary (as seen in `posting` package placeholders).
-3.  **Configuration**: All configurable parameters (API keys, URLs, paths) should be managed through `config/config.go` and populated from environment variables.
-4.  **Error Handling**: Implement robust error handling. Log errors clearly and allow the application to fail gracefully or retry where appropriate (though retry logic is not yet implemented).
-5.  **Dependencies**: Use Go modules for dependency management. Keep dependencies to a minimum where practical.
-6.  **Git Usage**:
-    *   The current GitHub integration shells out to the `git` command. Ensure this is handled safely.
-    *   Future improvements might involve using a native Go git library for better control and security.
+1. **Modularity**: Keep platforms and core concerns separated (`config`, `github`, `posting`, `state`, `cmd`).
+2. **Security**:
+   * Credentials load only from environment / `.env` (never hardcode secrets).
+   * Do not put tokens on process argv; git auth uses a temporary `.netrc` under a disposable `HOME`.
+   * Mask tokens in logs (`truncateToken`).
+   * Reject placeholder config values at startup.
+3. **Configuration**: All knobs go through `config/config.go` and `.env.example`.
+4. **Error Handling**: Fail closed for missing platforms; do not advance the checkpoint when publishing is incomplete. Record successful platform deliveries so retries do not duplicate.
+5. **Dependencies**: Prefer the Go standard library; keep module deps minimal.
+6. **Git Usage**: Shell out to `git` with validated HTTPS github.com URLs only.
 
 ## Code Structure
 
--   `cmd/`: Cobra CLI commands.
--   `config/`: Configuration loading.
--   `github/`: Interacting with the posts GitHub repository.
--   `posting/`: Logic for posting to different social media platforms. Each platform should have its own file.
--   `main.go`: Main application entry point.
--   `Dockerfile` & `docker-compose.yml`: For containerization and orchestration.
+- `cmd/` — Cobra CLI (`process`, `health`)
+- `config/` — configuration loading/validation (`SOURCE=telegram|github`)
+- `telegram/` — bot inbox via `getUpdates` (Telegram is the queue; confirm after success)
+- `github/` — repository sync and post discovery
+- `posting/` — platform APIs and content adapters
+- `state/` — checkpoint SHA, delivery ledger, flock
+- `Dockerfile` & `docker-compose.yml` — deployment
+- `.github/workflows/ci.yml` — CI
+- `.github/workflows/telegram-publish.yml` — hourly Telegram → socials
 
-## Tasks & Workflow
+## Adding a platform
 
--   When adding a new social media platform:
-    1.  Add new configuration fields to `config/config.go` and `.env.example`.
-    2.  Create a new `platform.go` file in the `posting/` package.
-    3.  Implement the `PostToPlatform` function, including actual API calls.
-    4.  Update `cmd/process.go` to call the new posting function, passing necessary config.
--   When modifying GitHub interaction (e.g., how new posts are detected):
-    -   Changes will primarily be in `github/git.go`.
-    -   Ensure `cmd/process.go` correctly uses the output.
--   **Persistence**: The `lastProcessedCommitSHA` in `cmd/process.go` is a critical piece of state that needs to be persisted across application runs. This is a key item for future implementation. Consider simple file-based storage or a lightweight DB.
+1. Add fields to `config/config.go` and `.env.example`
+2. Add `HasX()` / include in `ConfiguredPlatforms()`
+3. Create `posting/<platform>.go`
+4. Wire the job in `posting/publish.go`
+5. Add adapter rules in `posting/content.go` if needed
+6. Extend tests
+
+## State model
+
+- `STATE_FILE_PATH` — last processed commit SHA
+- `DELIVERIES_FILE_PATH` — JSON map of `commit|path|platform -> success`
+- Process lock beside the state file prevents concurrent runs
 
 ## Testing
 
--   (No automated tests are currently in place - this is a future enhancement)
--   When adding features or fixing bugs, consider how they would be tested.
+```bash
+go test ./...
+```
 
-Remember to update this `AGENTS.md` if significant architectural changes or new conventions are introduced.
+CI also runs `go vet`, `govulncheck`, and a Docker image build.
+
+## Deployment
+
+- Compose defaults to continuous mode (`PROCESS_INTERVAL=5m`, `restart: unless-stopped`)
+- Taskfile rsync **excludes** `.env`; secrets must already exist on the server
+
+Update this file when architecture or conventions change.

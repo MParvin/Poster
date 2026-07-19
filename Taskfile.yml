@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+
+version: '3'
+
+vars:
+  SERVER: devmad
+  DEP_PATH: /opt/src/poster
+
+tasks:
+  default:
+    desc: Sync source (excluding secrets) and rebuild on the deploy host
+    cmds:
+      - ssh "{{.SERVER}}" "mkdir -p {{.DEP_PATH}}"
+      - |
+        rsync -avz --delete \
+          --exclude .git \
+          --exclude .idea \
+          --exclude .env \
+          --exclude .env.* \
+          --exclude my_posts_repo \
+          --exclude my_posts_data \
+          --exclude '*.test' \
+          ./ "{{.SERVER}}:{{.DEP_PATH}}/"
+      - |
+        echo "NOTE: .env is not synced. Ensure {{.DEP_PATH}}/.env exists on the server with real secrets before starting."
+      - ssh "{{.SERVER}}" "test -f {{.DEP_PATH}}/.env || (echo 'Missing {{.DEP_PATH}}/.env on server' && exit 1)"
+      - ssh "{{.SERVER}}" "cd {{.DEP_PATH}} && docker compose up -d --build"
+      - sleep 10
+      - ssh "{{.SERVER}}" "cd {{.DEP_PATH}} && docker compose ps"
+      - ssh "{{.SERVER}}" "cd {{.DEP_PATH}} && docker compose logs --tail 50"
+    silent: true
+
+  down:
+    desc: Stop the remote compose stack
+    cmds:
+      - ssh "{{.SERVER}}" "cd {{.DEP_PATH}} && docker compose down --remove-orphans"
+
+  sync-env:
+    desc: Copy local .env to the deploy host (use sparingly; prefer creating .env on the server)
+    cmds:
+      - ssh "{{.SERVER}}" "mkdir -p {{.DEP_PATH}}"
+      - rsync -avz ./.env "{{.SERVER}}:{{.DEP_PATH}}/.env"
+      - ssh "{{.SERVER}}" "chmod 600 {{.DEP_PATH}}/.env"

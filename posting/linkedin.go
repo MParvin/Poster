@@ -6,18 +6,39 @@ import (
 )
 
 // PostToLinkedIn shares an update on LinkedIn.
-// This is a placeholder implementation.
-// LinkedIn posts can be simple text or include URLs, images, etc.
-func PostToLinkedIn(messageContent string, accessToken string) error {
+func PostToLinkedIn(messageContent, accessToken, personURN string) error {
 	if accessToken == "" {
 		return fmt.Errorf("linkedin access token is empty")
 	}
+	if personURN == "" {
+		return fmt.Errorf("linkedin person URN is empty")
+	}
 
-	log.Printf("[LINKEDIN] Sharing update: \"%s\" (using Access Token %s...)",
-		messageContent,
-		truncateToken(accessToken))
+	payload := map[string]any{
+		"author":         personURN,
+		"lifecycleState": "PUBLISHED",
+		"specificContent": map[string]any{
+			"com.linkedin.ugc.ShareContent": map[string]any{
+				"shareCommentary": map[string]any{
+					"text": messageContent,
+				},
+				"shareMediaCategory": "NONE",
+			},
+		},
+		"visibility": map[string]any{
+			"com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC",
+		},
+	}
 
-	// Placeholder: Simulate API call
-	log.Println("[LINKEDIN] Update shared successfully (simulated).")
+	log.Printf("[LINKEDIN] Sharing update (%d chars, token %s)", len(messageContent), truncateToken(accessToken))
+	_, _, err := doJSONRequest("POST", "https://api.linkedin.com/v2/ugcPosts", map[string]string{
+		"Authorization":             "Bearer " + accessToken,
+		"X-Restli-Protocol-Version": "2.0.0",
+	}, payload)
+	if err != nil {
+		return fmt.Errorf("linkedin post failed: %w", err)
+	}
+
+	log.Println("[LINKEDIN] Update shared successfully.")
 	return nil
 }

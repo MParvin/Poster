@@ -1,43 +1,37 @@
-version: '3.8'
-
 services:
   social_poster:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # Use a reachable mirror when docker.io is slow/blocked:
+        GO_IMAGE: focker.ir/golang:1.26.2-alpine3.22
+        RUNTIME_IMAGE: alpine:3.24
+        ALPINE_MIRROR: https://mirror.arvancloud.ir/alpine
+        GOPROXY: https://goproxy.io,https://proxy.golang.org,direct
     container_name: social_poster_app
-
-    # Mount the .env file from the host into the container if you want to use it directly.
-    # The application's config.LoadConfig() will look for /app/.env
-    # Alternatively, use env_file which loads them as environment variables.
-    # Using env_file is generally preferred as it doesn't require path mapping inside the app.
     env_file:
-      - .env # Docker Compose will look for a .env file in the same directory as docker-compose.yml
-
+      - .env
+    environment:
+      POSTS_REPO_PATH: /app/my_posts_data
+      STATE_FILE_PATH: /app/my_posts_data/.social_poster_state
+      DELIVERIES_FILE_PATH: /app/my_posts_data/.social_poster_deliveries.json
+      PROCESS_INTERVAL: ${PROCESS_INTERVAL:-5m}
     volumes:
-      # Persist the cloned posts repository data across container restarts
-      # The application's config.PostsRepoPath should match the target path here.
-      # If POSTS_REPO_PATH in .env is, e.g., "/app/my_posts_data", then use that.
-      # Our default in config.go is "./my_posts_repo" relative to project root,
-      # which becomes "/app/my_posts_repo" inside the container if WORKDIR is /app.
       - posts_data:/app/my_posts_data
-      # This assumes POSTS_REPO_PATH in your .env will be set to /app/my_posts_data
-      # or that you adjust the default in config.go to be an absolute path if needed
-      # when running in Docker. For now, we'll need to ensure POSTS_REPO_PATH in .env
-      # is set to /app/my_posts_data for this volume to be correctly used by the app.
-
-    # command: ["process"] # Optional: Overrides CMD in Dockerfile. Default is already "process".
-
-    # Restart policy (optional, consider for long-running service)
-    # restart: unless-stopped
-    # restart: on-failure
-
-    # For development, you might want to mount your source code
-    # to see changes without rebuilding (though for Go, you'd often rebuild).
-    # volumes:
-    #   - .:/app # Mounts current directory to /app in container
-    # Be cautious with this in production or if it conflicts with the build process.
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:exec,nosuid,size=64m
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+    security_opt:
+      - no-new-privileges:true
 
 volumes:
-  posts_data: # Defines a named volume for persisting the posts repository data
+  posts_data:
     driver: local

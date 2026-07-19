@@ -1,91 +1,103 @@
 # Social Poster
 
-Social Poster is a Go application designed to monitor a private GitHub repository for new posts (e.g., Markdown files, specific commit patterns). When new content is detected, it automatically shares this content to various configured social media platforms like Telegram, Twitter, Mastodon, Dev.to, and LinkedIn.
+Social Poster publishes short posts to configured social platforms (Twitter/X, Mastodon, Dev.to, LinkedIn, optional Telegram channel).
 
-## Features (Planned & Implemented)
+It supports two content sources via `SOURCE`:
 
--   Monitors a private GitHub repository for new content.
--   Loads credentials securely from a `.env` file.
--   Posts to multiple social media platforms (currently placeholder implementations):
-    -   Telegram
-    -   Twitter
-    -   Mastodon
-    -   Dev.to
-    -   LinkedIn
--   Dockerized for easy deployment and consistent environment.
+| Source | How content arrives | Typical deploy |
+|---|---|---|
+| `telegram` | People message your Telegram bot | **GitHub Actions** (hourly) |
+| `github` | New Markdown files in a private git repo | Docker / long-running process |
 
-## Getting Started
+## Recommended: Telegram bot + GitHub Actions
 
-### Prerequisites
+### Why not “every 4 hours because Telegram only keeps messages for 4 hours”?
 
--   Docker and Docker Compose installed.
--   `git` command-line tool (for local development or if not using Docker for everything).
--   A private GitHub repository containing your posts.
--   API keys and tokens for the social media platforms you want to use.
+Telegram Bot API keeps **unconfirmed** updates for up to **24 hours**, not 4. Confirmed updates are removed from the queue.
 
-### Configuration
+That means Telegram itself acts as the message queue / “database”:
 
-1.  **Copy the Example Environment File**:
-    ```bash
-    cp .env.example .env
-    ```
+1. Job calls `getUpdates` (pending messages)
+2. Publishes each message to configured socials
+3. Only then confirms the update (`offset = last_update_id + 1`)
 
-2.  **Edit `.env`**:
-    Fill in the required credentials and configuration details in the `.env` file.
-    Specifically, ensure the following are set:
-    -   `GITHUB_USERNAME`
-    -   `GITHUB_TOKEN` (Personal Access Token with `repo` scope)
-    -   `POSTS_REPO_URL` (e.g., `https://github.com/YOUR_USERNAME/my_posts.git`)
-    -   `POSTS_REPO_PATH=/app/my_posts_data` (This path is used by the Docker Compose volume setup to persist the cloned repository data within the container's filesystem.)
-    -   Tokens and keys for each social media platform you intend to use.
-    -   For Telegram, you'll also need `TELEGRAM_CHAT_ID`. (This was missing from the previous .env.example, I should add it).
+If a publish fails, the update stays pending and the next run retries it. No Postgres/SQLite required.
 
-### Running with Docker Compose
+**Schedule choice:** hourly (`0 * * * *` UTC) is a good default — well inside the 24h window, and better than 4h if many messages arrive (API returns at most 100 updates per call). Use workflow_dispatch for manual runs.
 
-1.  **Build and Run the Application**:
-    ```bash
-    docker-compose up --build
-    ```
-    This command will build the Docker image (if it's the first time or if changes were made) and start the `social_poster` service. The application will then execute its `process` command by default.
+### Setup
 
-2.  **To run a specific command (if different from default)**:
-    You can modify the `command` directive in `docker-compose.yml` or override it:
-    ```bash
-    docker-compose run --rm social_poster process --some-flag
-    ```
-    (Currently, `process` is the main command and takes no flags).
+1. Create a bot with [@BotFather](https://t.me/BotFather) → copy `TELEGRAM_BOT_TOKEN`
+2. Message the bot from your account (or add it to a group and message there)
+3. Find your numeric chat id (e.g. temporarily log `getUpdates`, or use a helper bot) → set `TELEGRAM_ALLOWED_CHAT_IDS`
+4. In the GitHub repo → **Settings → Secrets and variables → Actions**, add:
 
-### Development
+| Secret | Required | Purpose |
+|---|---|---|
+| `TELEGRAM_BOT_TOKEN` | yes | Bot token |
+| `TELEGRAM_ALLOWED_CHAT_IDS` | yes | Comma-separated numeric chat IDs allowed to submit posts |
+| `TWITTER_*` / `MASTODON_*` / `DEV_TO_API_KEY` / `LINKEDIN_*` | at least one set | Outbound platforms |
+| `TELEGRAM_CHAT_ID` | only if reposting | Outbound Telegram chat/channel |
 
-(Details about local Go development can be added here if needed, e.g., `go run main.go process`)
+Optional repository variable: `TELEGRAM_REPOST=true` to also send to `TELEGRAM_CHAT_ID` (off by default to avoid echo loops).
 
-## Project Structure
+5. Enable Actions. Workflow file: [`.github/workflows/telegram-publish.yml`](.github/workflows/telegram-publish.yml)
+6. Message the bot → wait for the hourly run (or **Actions → Telegram publish → Run workflow**)
 
--   `main.go`: Entry point of the application.
--   `cmd/`: Cobra CLI command definitions.
-    -   `root.go`: Root command setup.
-    -   `process.go`: The main `process` command for fetching and posting.
--   `config/`: Configuration loading (from `.env`).
--   `github/`: GitHub interaction logic (cloning, fetching posts).
--   `posting/`: Social media posting logic (currently placeholders).
--   `Dockerfile`: Defines the Docker image.
--   `docker-compose.yml`: For orchestrating the Docker container.
--   `.env.example`: Template for environment variables.
+### Local dry-run
 
-## Security Notes
+```bash
+cp .env.example .env
+# set SOURCE=telegram, token, allowlist, and at least one outbound platform
+go run . process --once --dry-run
+```
 
--   **Never commit your `.env` file** or any files containing live credentials to version control. The `.gitignore` file should already list `.env`.
--   The GitHub token is used for cloning the private repository. Ensure it has the minimum necessary permissions (usually `repo` scope).
--   Social media API keys and tokens should be treated with the same level of care.
+## Alternative: GitHub repo source (`SOURCE=github`)
 
-## Future Enhancements (TODO)
+Monitors a private posts repository for newly **added** Markdown files and publishes them. See `.env.example` for `GITHUB_*` / `POSTS_REPO_*` variables. Docker Compose remains available for this mode.
 
--   Implement actual API calls for each social media platform in the `posting/` package.
--   Develop a robust mechanism for detecting "new" posts in the `github/git.go` (e.g., based on file changes in new commits, specific naming conventions for post files, parsing commit messages).
--   Implement persistent storage for `lastProcessedCommitSHA` to correctly track processed posts across application restarts.
--   Add more sophisticated error handling and retry mechanisms for posting.
--   Implement content formatting and adaptation for different social media platforms.
--   Add unit and integration tests.
--   Consider a more secure method for handling the GitHub token during git operations if shelling out to `git clone/pull` remains the chosen method (e.g., git credential helper, or switch to a Go git library).
+## Configuration reference
 
-This project is under development.
+```bash
+cp .env.example .env
+```
+
+| Variable | Mode | Description |
+|---|---|---|
+| `SOURCE` | both | `telegram` or `github` (default `github`) |
+| `TELEGRAM_BOT_TOKEN` | telegram | Bot token |
+| `TELEGRAM_ALLOWED_CHAT_IDS` | telegram | Inbound allowlist (numeric IDs) |
+| `TELEGRAM_CHAT_ID` | optional | Outbound Telegram destination |
+| `TELEGRAM_REPOST` | telegram | Default `false` — post back to Telegram |
+| `STATE_FILE_PATH` / `DELIVERIES_FILE_PATH` | both | Checkpoint + per-platform delivery ledger |
+| `DRY_RUN` | both | Log only; do not publish or confirm Telegram updates |
+
+Placeholder/default values are rejected at startup.
+
+## Development
+
+```bash
+go test ./...
+go run . health
+go run . process --once --dry-run
+```
+
+## Project structure
+
+- `cmd/` — CLI (`process`, `health`)
+- `config/` — env loading/validation
+- `telegram/` — bot inbox (`getUpdates` / confirm offset)
+- `github/` — repo sync + markdown detection
+- `posting/` — platform publishers + content adapters
+- `state/` — checkpoint, delivery ledger, flock
+- `.github/workflows/telegram-publish.yml` — hourly Telegram → socials job
+
+## Security notes
+
+- Never commit `.env` or real tokens
+- Always set `TELEGRAM_ALLOWED_CHAT_IDS` so random people cannot feed your social accounts
+- Prefer fine-grained credentials for each outbound platform
+
+## License
+
+MIT

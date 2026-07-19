@@ -1,0 +1,63 @@
+name: Telegram publish
+
+# Telegram stores unconfirmed bot updates for up to 24 hours.
+# Hourly is well inside that window and also respects the 100-update page size.
+# No database is required: getUpdates is the queue; we confirm offsets only after
+# a successful publish. actions/cache keeps the delivery ledger between runs so
+# partial platform successes are not duplicated on retry.
+
+on:
+  schedule:
+    - cron: "0 * * * *" # every hour at minute 0 (UTC)
+  workflow_dispatch:
+
+concurrency:
+  group: telegram-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+
+      - name: Restore delivery state
+        uses: actions/cache@v4
+        with:
+          path: .state
+          key: telegram-poster-state-${{ github.repository }}-v1
+          restore-keys: |
+            telegram-poster-state-${{ github.repository }}-
+
+      - name: Build
+        run: go build -o social_poster .
+
+      - name: Process Telegram inbox
+        env:
+          SOURCE: telegram
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALLOWED_CHAT_IDS: ${{ secrets.TELEGRAM_ALLOWED_CHAT_IDS }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_REPOST: ${{ vars.TELEGRAM_REPOST }}
+          TWITTER_API_KEY: ${{ secrets.TWITTER_API_KEY }}
+          TWITTER_API_SECRET_KEY: ${{ secrets.TWITTER_API_SECRET_KEY }}
+          TWITTER_ACCESS_TOKEN: ${{ secrets.TWITTER_ACCESS_TOKEN }}
+          TWITTER_ACCESS_TOKEN_SECRET: ${{ secrets.TWITTER_ACCESS_TOKEN_SECRET }}
+          MASTODON_SERVER: ${{ secrets.MASTODON_SERVER }}
+          MASTODON_ACCESS_TOKEN: ${{ secrets.MASTODON_ACCESS_TOKEN }}
+          DEV_TO_API_KEY: ${{ secrets.DEV_TO_API_KEY }}
+          LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
+          LINKEDIN_PERSON_URN: ${{ secrets.LINKEDIN_PERSON_URN }}
+          STATE_FILE_PATH: .state/.social_poster_state
+          DELIVERIES_FILE_PATH: .state/.social_poster_deliveries.json
+          DRY_RUN: ${{ vars.DRY_RUN }}
+        run: ./social_poster process --once

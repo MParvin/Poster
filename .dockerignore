@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+.git
+.gitignore
+my_posts_repo
+my_posts_data
+.social_poster_state
+.social_poster_state.*
+.social_poster_deliveries.json
+.social_poster.lock
+*.md
+!go.sum
+.idea
+.vscode
+Taskfile.yml

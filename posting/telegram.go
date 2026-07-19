@@ -6,8 +6,7 @@ import (
 )
 
 // PostToTelegram sends a message to a Telegram channel using a bot token.
-// This is a placeholder implementation.
-func PostToTelegram(messageContent string, botToken string, chatID string) error {
+func PostToTelegram(messageContent, botToken, chatID string) error {
 	if botToken == "" {
 		return fmt.Errorf("telegram bot token is empty")
 	}
@@ -15,20 +14,18 @@ func PostToTelegram(messageContent string, botToken string, chatID string) error
 		return fmt.Errorf("telegram chat ID is empty")
 	}
 
-	log.Printf("[TELEGRAM] Posting to ChatID %s: \"%s\" (using token starting with %s...)",
-		chatID,
-		messageContent,
-		truncateToken(botToken))
-
-	// Placeholder: Simulate API call
-	log.Println("[TELEGRAM] Message sent successfully (simulated).")
-	return nil
-}
-
-// truncateToken is a helper to avoid logging full tokens.
-func truncateToken(token string) string {
-	if len(token) > 8 {
-		return token[:4]
+	endpoint := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", botToken)
+	payload := map[string]string{
+		"chat_id": chatID,
+		"text":    messageContent,
 	}
-	return "****"
+
+	log.Printf("[TELEGRAM] Posting to chat %s (%d chars, token %s)", chatID, len(messageContent), truncateToken(botToken))
+	_, _, err := doJSONRequest("POST", endpoint, nil, payload)
+	if err != nil {
+		return fmt.Errorf("telegram post failed: %w", err)
+	}
+
+	log.Println("[TELEGRAM] Message sent successfully.")
+	return nil
 }

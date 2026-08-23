@@ -38,8 +38,22 @@ jobs:
           restore-keys: |
             telegram-poster-state-${{ github.repository }}-
 
+      - name: Install Shred
+        run: apt-get update && apt-get install -y coreutils
+
+      - name: Show shred version
+        run: shred --version
+
+      - name: Install dependencies
+        run: go mod download
+
       - name: Build
         run: go build -o social_poster .
+
+      - name: Create .env file from Github Secrets POSTER_ENV variable
+        run: |
+          echo "${{ secrets.POSTER_ENV }}" > .env
+          echo "Created .env file from POSTER_ENV secret"
 
       - name: Process Telegram inbox
         env:
@@ -61,3 +75,11 @@ jobs:
           DELIVERIES_FILE_PATH: .state/.social_poster_deliveries.json
           DRY_RUN: ${{ vars.DRY_RUN }}
         run: ./social_poster process --once
+
+      - name: Remove secrets
+        if: always()
+        shell: bash
+        run: |
+          if [ -f "${GITHUB_WORKSPACE}/.env" ]; then
+            shred -vfz -n 3 "${GITHUB_WORKSPACE}/.env"
+          fi
